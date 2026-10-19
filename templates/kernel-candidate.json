@@ -1,0 +1,17 @@
+{
+  "name": "gemm-candidate",
+  "source": "kernels/gemm_candidate.cu",
+  "output": "build/gemm_candidate.so",
+  "m": 16,
+  "n": 32,
+  "k": 64,
+  "dtype": "bf16",
+  "accum_dtype": "fp32",
+  "layout": "row_row",
+  "bias": false,
+  "stream": "current",
+  "graph": true,
+  "defines": {"BIAS": 0},
+  "tolerance_relative_l2": null,
+  "validation_shapes": [[1, 7, 64], [17, 33, 64]]
+}

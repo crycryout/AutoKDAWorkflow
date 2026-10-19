@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "description": "Fill this template with actual adjacent or interleaved unprofiled model measurements. Empty pairs contain no timing evidence.",
+  "contracts": {
+    "baseline": null,
+    "candidate": null,
+    "hash_definition": "SHA-256 of the same frozen workload, precision, Graph/stream, quality and timing contract; source revisions are recorded separately."
+  },
+  "baseline_source_sha256": null,
+  "candidate_source_sha256": null,
+  "measurement_window": null,
+  "aa_calibration_artifact": null,
+  "platform_artifact": null,
+  "quality_artifact": null,
+  "pair_fields": {
+    "baseline_e2e_ms": "Positive finite observed synchronized baseline duration in milliseconds",
+    "candidate_e2e_ms": "Positive finite observed synchronized candidate duration in milliseconds",
+    "valid": "Boolean; true only when the frozen contract and measurement conditions hold",
+    "profiled": "Boolean; false for performance comparison samples",
+    "exclusion_reason": "Reason for invalid samples, retained alongside their observed data"
+  },
+  "pairs": []
+}

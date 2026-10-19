@@ -1,0 +1,23 @@
+--- a/knowledge/KernelWiki/SKILL.md
++++ b/knowledge/KernelWiki/SKILL.md
+@@ -1,9 +1,15 @@
+ ---
+-name: KernelWiki
+-description: Use when the user asks about optimizing NVIDIA Blackwell (SM100, B200) or Hopper (SM90, H100) GPU kernels — tcgen05/TMEM/CLC/NVFP4/2-SM cooperative, warp specialization, FlashAttention-4, DeepGEMM, FlashMLA, MoE, grouped GEMM, CuTe-DSL/PTX/Triton on Blackwell, or wants concrete PR references from CUTLASS/SGLang/vLLM/FlashInfer/PyTorch. Do NOT use for generic CUDA Q&A that is not Blackwell/Hopper-specific, host-side framework integration, or distributed systems (DeepEP/EPLB/DualPipe).
+-argument-hint: "[natural-language-question] | [--tag foo --type kernel] | [page-id]"
+-allowed-tools: "Bash Read Grep Glob"
++name: kernel-wiki
++description: Query pinned Blackwell/Hopper kernel design and PR evidence, including hypotheses for Thor SM110 KDA optimization.
++  Use for CUTLASS/CuTe/PTX/Triton kernel design, bottleneck patterns and prior implementations; verify architecture-specific
++  claims on the actual Thor toolchain.
++allowed-tools: Bash Read Grep Glob
+ ---
++
++## Thor SM110 context
++
++For Thor tasks, read [Thor contract](../../skills/thor-kda-workflow/references/thor-contract.md). This pinned corpus describes SM100/SM90 and retains its 2026-04-27 cutoff. Use pages as design evidence, then validate instructions, layouts, cluster geometry, launch semantics and tuning on SM110. Read the current task ledger before retrying an idea.
++
+ 
+ # KernelWiki — Blackwell & Hopper Kernel Optimization Wiki
+ 
+

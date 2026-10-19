@@ -1,0 +1,454 @@
+--- a/infra/model-pr-optimization-history/SKILL.md
++++ b/infra/model-pr-optimization-history/SKILL.md
+@@ -1,7 +1,15 @@
+ ---
+ name: model-pr-history-knowledge
+-description: Use when an SGLang, vLLM, TensorRT-LLM, or TokenSpeed serving/model optimization task needs prior model-family PR evidence. Query and read the PR-driven history docs under model-pr-optimization-history before choosing source paths, fast paths, kernel/fusion ideas, regression risks, or validation lanes.
++description: Use when an SGLang, vLLM, TensorRT-LLM, or TokenSpeed serving/model optimization task needs prior model-family
++  PR evidence. Query and read the PR-driven history docs under model-pr-optimization-history before choosing source paths,
++  fast paths, kernel/fusion ideas, regression risks, or validation lanes. Includes Thor KDA routing for matching PhyAI/FlashRT
++  tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # Model PR History Knowledge
+ 
+--- a/infra/skills/llm-pipeline-analysis/SKILL.md
++++ b/infra/skills/llm-pipeline-analysis/SKILL.md
+@@ -1,7 +1,14 @@
+ ---
+ name: llm-pipeline-analysis
+-description: "Inspect LLM torch profiler traces at forward-pass, layer, and kernel level. Use when you need layer timings, anchor-kernel boundaries, representative kernel flows, or Perfetto time ranges."
++description: Inspect LLM torch profiler traces at forward-pass, layer, and kernel level. Use when you need layer timings,
++  anchor-kernel boundaries, representative kernel flows, or Perfetto time ranges. Includes Thor KDA routing for matching PhyAI/FlashRT
++  tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # LLM Pipeline Analysis
+ 
+--- a/infra/skills/llm-pipeline-analysis/scripts/layer_timeline_analyzer.py
++++ b/infra/skills/llm-pipeline-analysis/scripts/layer_timeline_analyzer.py
+@@ -26,6 +26,7 @@
+ 
+ from model_profiles import (
+     ModelProfile,
++    bounded_component,
+     checked_anchor_indices,
+     choose_anchor,
+     configure_anchor_profile,
+@@ -309,9 +310,7 @@
+         ltype, cr = layer_type_label(
+             layer_id, compress_ratios, num_layers, num_hash_layers
+         )
+-        gemm = (
+-            info.get("gemm_fp8", 0) + info.get("gemm_bf16", 0) + info.get("gemm_f32", 0)
+-        )
++        gemm = prefix_total(info, "gemm")
+         mhc = prefix_total(info, "mhc")
+ 
+         print(
+@@ -374,10 +373,7 @@
+                 else 0
+             )
+ 
+-        gemm_sum = sum(
+-            i.get("gemm_fp8", 0) + i.get("gemm_bf16", 0) + i.get("gemm_f32", 0)
+-            for i in infos
+-        )
++        gemm_sum = sum(prefix_total(i, "gemm") for i in infos)
+         gemm_pct = gemm_sum / total_sum * 100 if total_sum else 0
+ 
+         print(
+@@ -428,6 +424,8 @@
+     ap.add_argument("--anchor-offset", type=int, default=0)
+     ap.add_argument("--pid", default=None)
+     ap.add_argument("--device", default=None)
++    ap.add_argument("--terminal-index", type=int, help="Verified inclusive terminal event in the selected, time-sorted GPU kernel list")
++    ap.add_argument("--boundary-evidence", help="Source/config/call-order evidence for the component's terminal event")
+     args = ap.parse_args()
+ 
+     events = load_trace(args.trace)
+@@ -441,6 +439,8 @@
+     else:
+         profile = infer_profile(config)
+ 
++    gpu = bounded_component(gpu, args.terminal_index, args.boundary_evidence, required=profile.name == "thor")
++
+     # Determine anchor kernel
+     anchor_kernel = args.anchor_kernel or find_anchor_kernel(gpu, profile)
+     profile = configure_anchor_profile(profile, anchor_kernel, args.blocks_per_layer)
+@@ -471,6 +471,9 @@
+     )
+     print(f"compress_ratios (first 10): {compress_ratios[:10]}...")
+     print(f"num_hash_layers: {num_hash_layers}")
++    if profile.name == "thor":
++        print("Thor anchor intervals are navigation/attribution windows, not exclusive full layer spans.")
++        print(f"Terminal GPU event: {args.terminal_index}; evidence: {args.boundary_evidence}")
+ 
+     if args.show_all_passes:
+         print_all_passes_summary(
+--- a/infra/skills/llm-pipeline-analysis/scripts/model_profiles.py
++++ b/infra/skills/llm-pipeline-analysis/scripts/model_profiles.py
+@@ -249,6 +249,18 @@
+     default_num_layers=1,
+ )
+ 
++# Thor policy traces include multiple model components in a single request.
++# Classify GEMM without inferring precision from an opaque CUDA symbol.
++PROFILE_THOR = replace(
++    PROFILE_GENERIC,
++    name="thor",
++    category_rules=[
++        ("  Norm", "rmsnorm", _any_sub("rmsnorm", "layernorm", "rms_norm", "_adarmsnorm", "::norm::")),
++        ("  Attention", "attention", _any_sub("flash_fwd", "prefillwith", "decodewith", "mergestates", "fmha", "attention")),
++        ("  GEMM", "gemm", _any_sub("gemm", "nvjet", "xmma", "warp_splitk", "small_k(", "splitkreduce")),
++    ] + _UNIVERSAL_CATEGORY_RULES,
++)
++
+ 
+ # ---------------------------------------------------------------------------
+ # Profile registry & inference
+@@ -259,6 +271,7 @@
+     "dsv41": PROFILE_DSV41,
+     "dsv3_mla": PROFILE_DSV3_MLA,
+     "generic": PROFILE_GENERIC,
++    "thor": PROFILE_THOR,
+ }
+ 
+ 
+@@ -549,3 +562,16 @@
+         )
+     # Final complete pass has no next-pass anchor: use end-of-selected-GPU sentinel.
+     return indices + [len(gpu)]
++
++
++def bounded_component(gpu, terminal_index=None, evidence=None, required=False):
++    """Keep an explicitly verified terminal GPU event, without rewriting it."""
++    if terminal_index is None:
++        if required:
++            raise ValueError("Thor component analysis requires --terminal-index and --boundary-evidence; a full request is not a component boundary")
++        return gpu
++    if not evidence or not evidence.strip():
++        raise ValueError("--boundary-evidence is required for a terminal index")
++    if terminal_index < 0 or terminal_index >= len(gpu):
++        raise ValueError("--terminal-index is outside the selected GPU kernel list")
++    return gpu[:terminal_index + 1]
+--- a/infra/skills/llm-serving-auto-benchmark/SKILL.md
++++ b/infra/skills/llm-serving-auto-benchmark/SKILL.md
+@@ -1,7 +1,14 @@
+ ---
+ name: llm-serving-auto-benchmark
+-description: Framework-independent LLM serving benchmark skill for comparing SGLang, vLLM, TensorRT-LLM, TokenSpeed, or another serving framework. Use when a user wants to find the best deployment command for one model across multiple serving frameworks under the same workload, GPU budget, and latency SLA.
++description: Framework-independent LLM serving benchmark skill for comparing SGLang, vLLM, TensorRT-LLM, TokenSpeed, or another
++  serving framework. Use when a user wants to find the best deployment command for one model across multiple serving frameworks
++  under the same workload, GPU budget, and latency SLA. Includes Thor KDA routing for matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # LLM Serving Auto Benchmark
+ 
+--- a/infra/skills/llm-serving-capacity-planner/SKILL.md
++++ b/infra/skills/llm-serving-capacity-planner/SKILL.md
+@@ -1,7 +1,13 @@
+ ---
+ name: llm-serving-capacity-planner
+-description: "Parse SGLang/vLLM startup logs to explain GPU memory use and request capacity. Use for KV cache budget, mem-fraction-static comparisons, OOM triage, and max-concurrency estimates."
++description: Parse SGLang/vLLM startup logs to explain GPU memory use and request capacity. Use for KV cache budget, mem-fraction-static
++  comparisons, OOM triage, and max-concurrency estimates. Includes Thor KDA routing for matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # LLM Serving Capacity Planner
+ 
+--- a/infra/skills/llm-torch-profiler-analysis/SKILL.md
++++ b/infra/skills/llm-torch-profiler-analysis/SKILL.md
+@@ -1,7 +1,14 @@
+ ---
+ name: llm-torch-profiler-analysis
+-description: "Analyze existing Torch Profiler Chrome traces or capture from SGLang, vLLM, TensorRT-LLM and TokenSpeed servers. Return kernel attribution, overlap opportunities and fusion patterns; use for model dispatch, CUDA Graph gaps, stream contention or exposed kernel tails. Includes existing SGLang Omni traces."
++description: Analyze existing Torch Profiler Chrome traces or capture from SGLang, vLLM, TensorRT-LLM and TokenSpeed servers.
++  Return kernel attribution, overlap opportunities and fusion patterns; use for model dispatch, CUDA Graph gaps, stream contention
++  or exposed kernel tails. Includes existing SGLang Omni traces. Includes Thor KDA routing for matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # LLM Torch Profiler Analysis
+ 
+--- a/infra/skills/llm-torch-profiler-analysis/scripts/analyze_llm_torch_profile.py
++++ b/infra/skills/llm-torch-profiler-analysis/scripts/analyze_llm_torch_profile.py
+@@ -47,6 +47,9 @@
+         default="auto",
+         choices=[
+             "auto",
++            "phyai",
++            "flashrt",
++            "thor",
+             "sglang",
+             "vllm",
+             "trtllm",
+--- a/infra/skills/llm-torch-profiler-analysis/scripts/profile_common.py
++++ b/infra/skills/llm-torch-profiler-analysis/scripts/profile_common.py
+@@ -20,6 +20,9 @@
+ STAGE_ORDER = {"extend": 0, "prefill": 0, "decode": 1, "all": 2}
+ FRAMEWORK_LABELS = {
+     "auto": "auto",
++    "phyai": "PhyAI (Thor offline trace)",
++    "flashrt": "FlashRT (Thor offline trace)",
++    "thor": "Thor (framework unspecified)",
+     "sglang": "SGLang",
+     "vllm": "vLLM",
+     "trtllm": "TensorRT-LLM",
+@@ -83,6 +86,10 @@
+     aliases = {
+         "": "auto",
+         "auto": "auto",
++        "phyai": "phyai",
++        "flashrt": "flashrt",
++        "flash-rt": "flashrt",
++        "thor": "thor",
+         "sglang": "sglang",
+         "sgl": "sglang",
+         "vllm": "vllm",
+@@ -107,6 +114,8 @@
+     text = text.replace("\\", "/")
+     lowered = text.lower()
+     for marker, normalized_marker in (
++        ("phyai/", "phyai/"),
++        ("flash_rt/", "flash_rt/"),
+         ("sglang_omni_router/", "sglang_omni_router/"),
+         ("sglang_omni/", "sglang_omni/"),
+         ("python/sglang/", "python/sglang/"),
+@@ -321,6 +330,10 @@
+     lowered = normalize_text(text).lower()
+     if not lowered:
+         return None
++    if "phyai/" in lowered:
++        return "phyai"
++    if "flash_rt/" in lowered:
++        return "flashrt"
+     if any(token in lowered for token in ("tokenspeed", "token-speed", "/ts/")):
+         return "tokenspeed"
+     if any(
+@@ -465,7 +478,7 @@
+             return hint
+     raise ValueError(
+         "Could not infer the serving framework; pass "
+-        "--framework sglang|vllm|trtllm|tokenspeed."
++        "--framework sglang|vllm|trtllm|tokenspeed|phyai|flashrt|thor."
+     )
+ 
+ 
+@@ -1104,6 +1117,12 @@
+             else None
+         ),
+     )
++    if resolved_framework in {"phyai", "flashrt", "thor"}:
++        raise ValueError(
++            "Thor/PhyAI/FlashRT uses task-local Torch Profiler or Nsight capture. "
++            "Pass --input (or --mapping-input/--formal-input) to analyze it; "
++            "these backends have no assumed serving HTTP profiler endpoint."
++        )
+     if resolved_framework == "sglang":
+         if sglang_profile_v2 or os.environ.get("SGLANG_PROFILE_V2", "").lower() in {
+             "1",
+--- a/infra/skills/llm-torch-profiler-analysis/scripts/triage_kernel_helpers.py
++++ b/infra/skills/llm-torch-profiler-analysis/scripts/triage_kernel_helpers.py
+@@ -81,6 +81,9 @@
+             "mma",
+             "bmm",
+             "nvjet",
++            "warp_splitk",
++            "small_k(",
++            "splitkreduce",
+         ),
+     ),
+     (
+@@ -173,6 +176,9 @@
+     "mma",
+     "bmm",
+     "nvjet",
++    "warp_splitk",
++    "small_k(",
++    "splitkreduce",
+     "fmha",
+     "attention",
+     "flash_attn",
+@@ -1287,7 +1293,7 @@
+ @lru_cache(maxsize=65536)
+ def canonicalize_name(name: str) -> str:
+     text = normalize_text(name)
+-    text = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", text)
++    text = re.sub(r"(?<![0-9A-Za-z])0x[0-9a-fA-F]+", "0xADDR", text)
+     if text.startswith("void ") and text.endswith(")"):
+         depth = 0
+         split_idx: Optional[int] = None
+@@ -1307,6 +1313,13 @@
+ 
+ @lru_cache(maxsize=65536)
+ def classify_kernel(name: str) -> str:
++    # Thor CuTe manglings contain 'normlayer', which includes the substring
++    # 'mla'. Recognize explicit norm symbols before the broad attention rules.
++    lowered = name.lower()
++    if any(token in lowered for token in ('layernormkernel', 'flashinfernormkernels', '::norm::')):
++        return 'norm'
++    if 'pytorch_flash::flash_fwd' in lowered:
++        return 'attention'
+     # Keep the matching order explicit: strong communication/memory signals win
+     # first, then we fall back to weaker category hints.
+     # CUTLASS also implements norm/quant kernels; its namespace is not a GEMM hint.
+--- a/infra/skills/llm-torch-profiler-analysis/scripts/triage_overlap_helpers.py
++++ b/infra/skills/llm-torch-profiler-analysis/scripts/triage_overlap_helpers.py
+@@ -312,7 +312,7 @@
+ 
+ def canonicalize_name(name: str) -> str:
+     name = normalize_text(name)
+-    name = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", name)
++    name = re.sub(r"(?<![0-9A-Za-z])0x[0-9a-fA-F]+", "0xADDR", name)
+     if name.startswith("void ") and name.endswith(")"):
+         depth = 0
+         split_idx: Optional[int] = None
+@@ -332,7 +332,7 @@
+ 
+ def canonicalize_python_scope_name(name: str) -> str:
+     name = normalize_text(name)
+-    name = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", name)
++    name = re.sub(r"(?<![0-9A-Za-z])0x[0-9a-fA-F]+", "0xADDR", name)
+     match = re.match(r"(?P<path>.+?)\((?P<line>\d+)\): (?P<func>.+)$", name)
+     if match:
+         path = normalize_repo_relative_path(match.group("path"))
+--- a/infra/skills/model-architecture-diagram/SKILL.md
++++ b/infra/skills/model-architecture-diagram/SKILL.md
+@@ -1,7 +1,15 @@
+ ---
+ name: model-architecture-diagram
+-description: Return public original model architecture diagrams for user-specified LLM, VLM, MoE, diffusion, OCR, and SGLang/sgl-cookbook model families. Use when the user asks for a model structure chart, architecture diagram, or rendered image link for a specific model such as DeepSeek, GLM, Qwen, Kimi, MiniMax, Step, Hunyuan, or Qwen3-VL.
++description: Return public original model architecture diagrams for user-specified LLM, VLM, MoE, diffusion, OCR, and SGLang/sgl-cookbook
++  model families. Use when the user asks for a model structure chart, architecture diagram, or rendered image link for a specific
++  model such as DeepSeek, GLM, Qwen, Kimi, MiniMax, Step, Hunyuan, or Qwen3-VL. Includes Thor KDA routing for matching PhyAI/FlashRT
++  tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # Model Architecture Diagram
+ 
+--- a/infra/skills/model-compute-simulation/SKILL.md
++++ b/infra/skills/model-compute-simulation/SKILL.md
+@@ -1,7 +1,14 @@
+ ---
+ name: model-compute-simulation
+-description: "Build an operator-level compute template for an LLM and estimate FLOPs/MFU for a serving shape. Use when you need tensor shapes, per-op FLOPs, kernel-to-op MFU mapping, or parallelism what-if analysis."
++description: Build an operator-level compute template for an LLM and estimate FLOPs/MFU for a serving shape. Use when you
++  need tensor shapes, per-op FLOPs, kernel-to-op MFU mapping, or parallelism what-if analysis. Includes Thor KDA routing for
++  matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # Model Compute Simulation
+ 
+--- a/infra/skills/model-optimization/sglang-model-day0-support/SKILL.md
++++ b/infra/skills/model-optimization/sglang-model-day0-support/SKILL.md
+@@ -1,7 +1,16 @@
+ ---
+ name: sglang-model-day0-support
+-description: Build or audit an evidence-driven SGLang Day-0 support program for a new LLM, VLM, MoE, hybrid-attention, or speculative-decoding model. Use when Codex needs to map a model architecture into SGLang runtime work, design a public support PR DAG, create validation and release gates, sanitize private development evidence, distinguish Day-0 requirements from later fixes or optimizations, or review whether an existing model-support PR is release-ready.
++description: Build or audit an evidence-driven SGLang Day-0 support program for a new LLM, VLM, MoE, hybrid-attention, or
++  speculative-decoding model. Use when Codex needs to map a model architecture into SGLang runtime work, design a public support
++  PR DAG, create validation and release gates, sanitize private development evidence, distinguish Day-0 requirements from
++  later fixes or optimizations, or review whether an existing model-support PR is release-ready. Includes Thor KDA routing
++  for matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # SGLang Model Day-0 Support
+ 
+--- a/infra/skills/sglang-humanize-review/SKILL.md
++++ b/infra/skills/sglang-humanize-review/SKILL.md
+@@ -1,7 +1,16 @@
+ ---
+ name: sglang-humanize-review
+-description: "Perform SGLang code review in the style of human maintainers by consulting the public PR review episode corpus from project start through 2026-07-27, including inline review threads, top-level PR comments, review submissions, original multilingual text, and multi-round discussions. Use when reviewing SGLang PRs, diffs, patches, or local changes for correctness, tests, performance, GPU/runtime risks, API compatibility, and maintainability."
++description: Perform SGLang code review in the style of human maintainers by consulting the public PR review episode corpus
++  from project start through 2026-07-27, including inline review threads, top-level PR comments, review submissions, original
++  multilingual text, and multi-round discussions. Use when reviewing SGLang PRs, diffs, patches, or local changes for correctness,
++  tests, performance, GPU/runtime risks, API compatibility, and maintainability. Includes Thor KDA routing for matching PhyAI/FlashRT
++  tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # SGLang Humanize Review
+ 
+--- a/infra/skills/sglang-prod-incident-triage/SKILL.md
++++ b/infra/skills/sglang-prod-incident-triage/SKILL.md
+@@ -1,7 +1,15 @@
+ ---
+ name: sglang-prod-incident-triage
+-description: Replay-first debug flow for SGLang serving problems. Use when a live or recent server shows health-check failures, latency or throughput regressions, queue growth, timeouts, distributed stalls, crash dumps, wrong outputs after deploys, or PD/EP/HiCache issues, and the job is to turn the problem into a replay plus the right next debug tool.
++description: Replay-first debug flow for SGLang serving problems. Use when a live or recent server shows health-check failures,
++  latency or throughput regressions, queue growth, timeouts, distributed stalls, crash dumps, wrong outputs after deploys,
++  or PD/EP/HiCache issues, and the job is to turn the problem into a replay plus the right next debug tool. Includes Thor
++  KDA routing for matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # SGLang Serving Debug
+ 
+--- a/infra/skills/torch-profiler-layer-track/SKILL.md
++++ b/infra/skills/torch-profiler-layer-track/SKILL.md
+@@ -1,7 +1,14 @@
+ ---
+ name: torch-profiler-layer-track
+-description: Add verified layer-number guides and compact GPU display lanes to an existing Torch Profiler Chrome JSON trace. Use for L0/L1/... navigation or traces with hundreds of CUDA Graph stream rows. Changes visualization, not runtime streams.
++description: Add verified layer-number guides and compact GPU display lanes to an existing Torch Profiler Chrome JSON trace.
++  Use for L0/L1/... navigation or traces with hundreds of CUDA Graph stream rows. Changes visualization, not runtime streams.
++  Includes Thor KDA routing for matching PhyAI/FlashRT tasks.
+ ---
++
++## Thor KDA adaptation
++
++For Thor2, Pi05, Cosmos3, GR00T, PhyAI or FlashRT tasks, first read the [Thor tool mapping](../../../skills/thor-kda-workflow/references/tool-map.md) and [execution/acceptance contract](../../../skills/thor-kda-workflow/references/thor-contract.md). Apply the mapped backend, metric and phase semantics before using the upstream examples below. Serving-specific commands apply only when that serving runtime is actually deployed.
++
+ 
+ # Torch Profiler Layer Track
+ 
+

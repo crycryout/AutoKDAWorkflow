@@ -1,0 +1,4 @@
+# CPU-only test and agent-link setup dependencies.
+pytest>=8,<9
+PyYAML>=6,<7
+requests>=2.32,<3

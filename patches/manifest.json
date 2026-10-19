@@ -1,0 +1,40 @@
+[
+  {
+    "patch": "ai-infra-v0.1.5-thor.patch",
+    "sha256": "900c1bf1be62c0b34c886750ff0f1615d067659f73938b3bfeadc247c6ce60c4",
+    "files": [
+      "infra/model-pr-optimization-history/SKILL.md",
+      "infra/skills/llm-pipeline-analysis/SKILL.md",
+      "infra/skills/llm-pipeline-analysis/scripts/layer_timeline_analyzer.py",
+      "infra/skills/llm-pipeline-analysis/scripts/model_profiles.py",
+      "infra/skills/llm-serving-auto-benchmark/SKILL.md",
+      "infra/skills/llm-serving-capacity-planner/SKILL.md",
+      "infra/skills/llm-torch-profiler-analysis/SKILL.md",
+      "infra/skills/llm-torch-profiler-analysis/scripts/analyze_llm_torch_profile.py",
+      "infra/skills/llm-torch-profiler-analysis/scripts/profile_common.py",
+      "infra/skills/llm-torch-profiler-analysis/scripts/triage_kernel_helpers.py",
+      "infra/skills/llm-torch-profiler-analysis/scripts/triage_overlap_helpers.py",
+      "infra/skills/model-architecture-diagram/SKILL.md",
+      "infra/skills/model-compute-simulation/SKILL.md",
+      "infra/skills/model-optimization/sglang-model-day0-support/SKILL.md",
+      "infra/skills/sglang-humanize-review/SKILL.md",
+      "infra/skills/sglang-prod-incident-triage/SKILL.md",
+      "infra/skills/torch-profiler-layer-track/SKILL.md"
+    ]
+  },
+  {
+    "patch": "kernel-wiki-thor.patch",
+    "sha256": "34287b44e35cf8d619ce1c0e5b6f31f34c99a7fe58d604e176ff4e02aed9a1bb",
+    "files": [
+      "knowledge/KernelWiki/SKILL.md"
+    ]
+  },
+  {
+    "patch": "ncu-report-thor.patch",
+    "sha256": "b2f1dfcea627851fd4acd908a35dc3803c85d516998d4bf34c5fedf486d916dc",
+    "files": [
+      "knowledge/ncu-report-skill/SKILL.md",
+      "knowledge/ncu-report-skill/helpers/ncu_utils.py"
+    ]
+  }
+]

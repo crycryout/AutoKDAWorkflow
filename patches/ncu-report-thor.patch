@@ -1,0 +1,47 @@
+--- a/knowledge/ncu-report-skill/SKILL.md
++++ b/knowledge/ncu-report-skill/SKILL.md
+@@ -1,7 +1,14 @@
+ ---
+ name: ncu-report-skill
+-description: Profile CUDA kernels with Nsight Compute on B200 / sm_100. Use when the user asks to profile a kernel, analyze its performance, diagnose bottlenecks, read an ncu report, or write an optimization plan — including variants in Chinese ("profile 一下", "为什么慢", "ncu 报告").
++description: Profile and analyze CUDA kernels on Thor2 SM110 using task-local Nsight Compute capture/import and
++  discovered report metrics. Also retains upstream B200 references. Use for kernel bottlenecks, report interpretation and
++  evidence-backed optimization.
+ ---
++
++## Thor2 deployment override
++
++Read [Thor contract](../../skills/thor-kda-workflow/references/thor-contract.md) and [commands](../../skills/thor-kda-workflow/references/commands.md). For Thor, use CUDA 13.0, sm_110a, the configured profiling permissions, an explicit section folder, --clock-control none and --cache-control none. Build/run as the normal user except profiling. Keep output inside the current task workspace. Start with a successful real capture and import; query actual report metrics with ../../tools/ncu_summary.py. Unsupported DRAM or PM-sampling metrics remain unknown. B200 peak values and metric availability below are not Thor constants. Additional full/source/PM captures are chosen only when supported and useful for the current question. Use the actual application replay/cache context when isolation changes the bottleneck. Estimated rule speedups require paired unprofiled verification.
++
+ 
+ # Skill: CUDA Kernel Profiling (B200 / Nsight Compute)
+ 
+@@ -27,7 +34,7 @@
+ 
+ 2. **Build a standalone harness** unless the user is profiling through their existing binary. Harnesses compile in seconds, run the kernel in isolation, and let you use `-lineinfo` cleanly so ncu can map SASS back to source. Compile into `profile/<run_name>/harness/`. See [`reference/02-harness-guide.md`](reference/02-harness-guide.md) and the template in [`helpers/harness_template.cu`](helpers/harness_template.cu).
+ 
+-3. **Run two profiles**: `--set full` (with `PmSampling` sections) for the overview, and `--set source --section SourceCounters` for per-line stall attribution. Write outputs to `profile/<run_name>/reports/`. See [`reference/03-collection.md`](reference/03-collection.md).
++3. **For the upstream B200 recipe, run two profiles** (Thor uses the override above): `--set full` (with `PmSampling` sections) for the overview, and `--set source --section SourceCounters` for per-line stall attribution. Write outputs to `profile/<run_name>/reports/`. See [`reference/03-collection.md`](reference/03-collection.md).
+ 
+ 4. **Parse with `ncu_report`** Python module — not by eye-balling the CLI. Write analysis outputs to `profile/<run_name>/analysis/`. Use the helpers in [`helpers/`](helpers/). See [`reference/04-python-api.md`](reference/04-python-api.md).
+ 
+@@ -76,7 +83,7 @@
+ 
+ 2. **Always compile with `-lineinfo`.** Without it, ncu's source view is blank and you cannot do per-line stall analysis. If you can't add `-lineinfo` to the build system (TVM-FFI, PyTorch inline, JIT), **build a standalone harness** — that's the whole point.
+ 
+-3. **PM sampling is the only way to see tail effects.** Static metrics average over the whole kernel; only the time-series (either `pmsampling:` metrics or the ASCII plotter in `helpers/`) shows the shape of utilization over time.
++3. **When supported, PM sampling exposes utilization over time.** Static metrics average over the whole kernel; only the time-series (either `pmsampling:` metrics or the ASCII plotter in `helpers/`) shows the shape of utilization over time.
+ 
+ 4. **Load-imbalance on variable-length inputs is often the #1 bottleneck.** If the user's workload has sequences of varying length, per-SM active-cycle variance will often dwarf every other effect. Always check the input distribution.
+ 
+--- a/knowledge/ncu-report-skill/helpers/ncu_utils.py
++++ b/knowledge/ncu-report-skill/helpers/ncu_utils.py
+@@ -18,6 +18,7 @@
+ # --- Attempt to locate ncu_report --------------------------------------------
+ def _locate_ncu_report():
+     candidates = [
++        "/opt/nvidia/nsight-compute/2025.3.0/extras/python",
+         "/usr/local/cuda-13.2/nsight-compute-2026.1.0/extras/python",
+         "/usr/local/cuda/nsight-compute/extras/python",
+     ]
+

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "ai_infra": {
+      "url": "https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS",
+      "commit": "6dc9c66a008daded66f214022919ff88b2186252",
+      "archive_sha256": "539d1894603fa9ccc4fcad4555004374d7cbb98fe318e80a9d7e967c02c955ad",
+      "destination": "infra",
+      "patch": "ai-infra-v0.1.5-thor.patch",
+      "tag": "v0.1.5"
+    },
+    "kernel_wiki": {
+      "url": "https://github.com/mit-han-lab/KernelWiki",
+      "commit": "76d27b56f804e7e7295d4c570e1e5d7eef4b0a75",
+      "archive_sha256": "8fe472c78c69a012045aa05cc2af89d44516323e3f3e47dd79c3f1085d06231c",
+      "destination": "knowledge/KernelWiki",
+      "patch": "kernel-wiki-thor.patch"
+    },
+    "ncu_report_skill": {
+      "url": "https://github.com/mit-han-lab/ncu-report-skill",
+      "commit": "d1887948c7d53690cfe6605f59c1329b8a1c6bb5",
+      "archive_sha256": "05d42f4a8556945e32edbc6f3a54550a180e6f53ce9e490d1f2af7482772c3b2",
+      "destination": "knowledge/ncu-report-skill",
+      "patch": "ncu-report-thor.patch"
+    },
+    "kda": {
+      "url": "https://github.com/NVlabs/kda",
+      "commit": "ef6ce617693ef0782b3ecb9f37e39bbf10226a90",
+      "archive_sha256": "aeb38cdf581948898800f3a7ddf1776dd037a6a0944c6b696308215fb5f81c33",
+      "destination": "upstream/kda"
+    },
+    "kda_pilot": {
+      "url": "https://github.com/BBuf/KDA-Pilot",
+      "commit": "bac966ba09fe22f6220ff527c7c3555e539d5fe6",
+      "archive_sha256": "d8754981a6136a0192df06d3335ebc4a56259c35a00f836ae199b954b9367f59",
+      "destination": "upstream/kda-pilot"
+    }
+  }
+}

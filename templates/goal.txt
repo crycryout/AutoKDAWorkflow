@@ -1,0 +1,32 @@
+Objective: <measurable model/runtime/kernel objective>
+
+Model and runtime:
+- Model/weight revision: <revision>
+- Framework/backend/source revision: <revision>
+- Thor Python/CUDA/CUTLASS/CuTe environment: <configured paths and versions>
+- Baseline candidate/source hashes: <accepted baseline>
+
+Frozen workload and correctness:
+- Batch, shapes, layouts, dtype and accumulation: <contract>
+- Input source and variability: <shape / values / addresses / control flow>
+- Preprocessing, iterations, stream and CUDA Graph: <contract>
+- Numerical acceptance and boundary cases: <metric, threshold and cases>
+- Model/task quality: <dataset, metric and permitted change>
+
+Measurement:
+- Exact synchronized E2E timing region: <included and separately reported work>
+- Warmup/cache/concurrency/power conditions: <contract>
+- A/A protocol and acceptable noise: <protocol>
+- A/B protocol: <at least 20 valid unprofiled pairs and independent confirmation>
+- Performance target and decision condition: <target>
+
+Workflow:
+Freeze the contract, establish baseline/A-A, profile a representative request,
+choose framework or kernel changes from the measured bottleneck, change one
+testable variable, verify numerics/stream/Graph, measure paired unprofiled E2E,
+and adopt or roll back using the frozen performance and model-quality gates.
+
+Deliverables:
+Reviewable patch, parent/source/binary hashes, commands, raw paired samples,
+platform and interference evidence, numerical/stream/Graph checks, actual model
+quality, decision rationale and explicitly unverified behavior.

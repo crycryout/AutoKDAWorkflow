@@ -1,0 +1,17 @@
+{
+  "ssh_target": "thor",
+  "ssh_prefix": [],
+  "ssh_port": 22,
+  "remote_root": "/srv/thor-workspaces/auto-kda-workflow",
+  "allowed_root": "/srv/thor-workspaces",
+  "python": "python3",
+  "cuda_home": "/usr/local/cuda",
+  "expected_hostname": null,
+  "expected_arch": "aarch64",
+  "expected_gpu": "NVIDIA Thor",
+  "cute_arch": "sm_110a",
+  "ncu": null,
+  "nsys": "nsys",
+  "ncu_sections": null,
+  "profiler_sudo": true
+}
